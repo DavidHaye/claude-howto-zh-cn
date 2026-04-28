@@ -32,11 +32,11 @@ Features:
     - Generates a cover image from the project logo
     - Converts internal markdown links to EPUB chapter references
     - Handles SVG images by replacing with styled placeholders
-    - Strict error mode: fails if any diagram cannot be rendered
+    - Falls back to readable Mermaid source blocks if remote rendering fails
 
 Requirements:
     - uv (recommended) or Python 3.10+ with dependencies installed
-    - Internet connection for Mermaid diagram rendering
+    - Internet connection for Mermaid diagram rendering (optional fallback included)
     - Repository structure with markdown files and claude-howto-logo.png
 """
 
@@ -269,7 +269,7 @@ class MermaidRenderer:
 
     async def _fetch_single(
         self, client: httpx.AsyncClient, mermaid_code: str, index: int
-    ) -> tuple[str, tuple[bytes, str]]:
+    ) -> tuple[str, tuple[bytes, str]] | None:
         """Fetch a single Mermaid diagram with retry logic."""
         cache_key = mermaid_code.strip()
 
@@ -281,11 +281,20 @@ class MermaidRenderer:
         # Rate limit with semaphore
         assert self._semaphore is not None
         async with self._semaphore:
-            result = await self._fetch_with_retry(client, mermaid_code, index)
-            if result is None:
-                raise MermaidRenderError(
-                    f"Failed to render Mermaid diagram {index} after {self.config.max_retries} attempts"
+            try:
+                result = await self._fetch_with_retry(client, mermaid_code, index)
+            except (httpx.HTTPError, MermaidRenderError) as e:
+                self.logger.warning(
+                    f"Skipping rendered image for Mermaid diagram {index}: "
+                    f"{type(e).__name__}: {e}. Keeping source block in EPUB."
                 )
+                return None
+            if result is None:
+                self.logger.warning(
+                    f"Skipping rendered image for Mermaid diagram {index} after "
+                    f"{self.config.max_retries} attempts. Keeping source block in EPUB."
+                )
+                return None
             return cache_key, result
 
     @retry(
@@ -350,10 +359,13 @@ class MermaidRenderer:
 
             self.logger.info(f"Fetching {len(tasks)} Mermaid diagrams concurrently...")
 
-            # Use gather with return_exceptions=False for strict mode
+            # Remote rendering is best-effort; unavailable diagrams remain as code blocks.
             completed = await asyncio.gather(*tasks)
 
-            for cache_key, data in completed:
+            for item in completed:
+                if item is None:
+                    continue
+                cache_key, data = item
                 results[cache_key] = data
 
         success_count = len(results)
@@ -912,9 +924,10 @@ def process_mermaid_blocks(
                 state.mermaid_added_to_book.add(img_name)
             return f"\n![Diagram](images/{img_name})\n"
         else:
-            # This should not happen in strict mode since we pre-fetch all diagrams
-            logger.error("Mermaid diagram not found in cache")
-            raise MermaidRenderError("Mermaid diagram not found in cache")
+            logger.warning(
+                "Mermaid diagram was not rendered; keeping source block in EPUB."
+            )
+            return match.group(0)
 
     return re.sub(pattern, replace_mermaid, md_content, flags=re.DOTALL)
 

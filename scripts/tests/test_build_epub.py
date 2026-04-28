@@ -6,7 +6,9 @@ import logging
 from pathlib import Path
 from unittest.mock import patch
 
+import httpx
 import pytest
+from ebooklib import epub
 
 # Fixtures are imported from conftest.py automatically by pytest
 # Import from parent directory (handled by conftest.py sys.path)
@@ -14,13 +16,15 @@ from build_epub import (
     BuildState,
     ChapterCollector,
     EPUBConfig,
+    MermaidRenderer,
     ValidationError,
-    create_cover_image,
     create_chapter_html,
-    prepare_root_readme_for_epub,
-    extract_markdown_h1,
+    create_cover_image,
     extract_all_mermaid_blocks,
+    extract_markdown_h1,
     get_chapter_order,
+    prepare_root_readme_for_epub,
+    process_mermaid_blocks,
     sanitize_mermaid,
     setup_logging,
     validate_inputs,
@@ -267,6 +271,40 @@ graph TD
 
         # Should only have one diagram since they're identical
         assert len(diagrams) == 1
+
+    @pytest.mark.asyncio
+    async def test_mermaid_render_timeout_keeps_build_going(
+        self, config: EPUBConfig, state: BuildState, logger: logging.Logger
+    ) -> None:
+        """A Kroki timeout should not fail the whole EPUB build."""
+        renderer = MermaidRenderer(config, state, logger)
+
+        with patch.object(
+            renderer,
+            "_fetch_with_retry",
+            side_effect=httpx.ReadTimeout("timed out"),
+        ):
+            rendered = await renderer.render_all([(1, "graph TD\n    A --> B")])
+
+        assert rendered == {}
+        assert state.mermaid_cache == {}
+
+    def test_unrendered_mermaid_block_falls_back_to_source(
+        self, state: BuildState, logger: logging.Logger
+    ) -> None:
+        """Unrendered Mermaid should remain readable instead of raising."""
+        content = """# Diagram
+
+```mermaid
+graph TD
+    A --> B
+```
+"""
+
+        processed = process_mermaid_blocks(content, epub.EpubBook(), state, logger)
+
+        assert "```mermaid" in processed
+        assert "A --> B" in processed
 
 
 # =============================================================================
