@@ -5,7 +5,7 @@
 - 上游仓库：[`luongnv89/claude-howto`](https://github.com/luongnv89/claude-howto)
 - 上游分支：`main`
 - 本地化基线 commit：`0ca8c37c81918458e063739425c4740ca92c2db2`
-- 最近检查到的上游 commit：`32212292df53fe97db8a9d8e1327962e55055464`
+- 最近检查到的上游 commit：`f393805fb8b377483bcbb10aa47caf7f1942974b`
 - 上游许可证：[MIT License](LICENSE)
 
 ## 本仓库性质
@@ -61,6 +61,19 @@ uv run python scripts/validate_localization.py
    - 哪些内容暂时未同步
 
 ## 最近一次同步记录
+
+### 上游同步 — 2026-05-01
+
+- Reviewed upstream range: `3221229` → `f393805`
+- 重点上游变化：
+  - 新增完整 `ja/` 日文翻译目录
+  - 英文 README 去掉硬编码 star / fork 数字，改成更稳妥的动态信任表述
+  - 上游为日文目录补充对应 pre-commit / EPUB 构建支持
+- Chinese fork actions:
+  - 不引入 `ja/` 多语言目录，继续保持根目录中文主线
+  - 中文 README 原本未使用上游硬编码 star / fork 指标，因此只更新同步记录
+  - 不同步日文 EPUB / pre-commit 专项配置，避免为未维护目录增加无效检查
+  - 保持中文默认入口和核心教程内容不变
 
 ### 上游同步 — 2026-04-28
 
